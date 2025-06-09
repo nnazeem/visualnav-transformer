@@ -1,6 +1,6 @@
 # Setting up General Navigation Models over GCP, via RDP
 
-Workflow for setting up a Google Cloud Platform (GCP) instance to run the `visualnav-transformer` project with a simulated TurtleBot 2 in Gazebo.
+Workflow for setting up a Google Cloud Platform (GCP) instance to run the `visualnav-transformer` project with a simulated TurtleBot 2 in Gazebo. (Also see [this](https://drive.google.com/file/d/1KvqbTOxI_wr1OJXv5VS_XtGIQEM0-7qZ/view?usp=drive_link) video)
 
 ## Part 1: Environment Setup
 
