@@ -1,7 +1,5 @@
 # Setting up General Navigation Models over GCP, via RDP
 
-# README: Running Visual-Nav-Transformer in a Simulated TurtleBot Environment on GCP
-
 Workflow for setting up a Google Cloud Platform (GCP) instance to run the `visualnav-transformer` project with a simulated TurtleBot 2 in Gazebo.
 
 ## Part 1: Environment Setup
@@ -189,7 +187,7 @@ This is the final end-to-end workflow, performed inside the RDP session.
       * In Terminal 2, launch the AI:
         ```bash
         cd ~/visualnav-transformer/deployment/src/
-        ./navigate.sh "--model gnm --dir my_demo_map --goal-node <goal_node_number>"
+        ./navigate.sh "--model <gnm|vint|nomad> --dir my_demo_map --goal-node <goal_node_number>"
         ```
       * Watch the Gazebo window to see the robot navigate autonomously.
 
