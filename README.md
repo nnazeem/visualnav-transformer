@@ -1,3 +1,200 @@
+# Setting up General Navigation Models over GCP, via RDP
+
+# README: Running Visual-Nav-Transformer in a Simulated TurtleBot Environment on GCP
+
+Workflow for setting up a Google Cloud Platform (GCP) instance to run the `visualnav-transformer` project with a simulated TurtleBot 2 in Gazebo.
+
+## Part 1: Environment Setup
+
+This covers the creation and configuration of the entire software stack from scratch.
+
+### 1.1: GCP Instance Setup
+
+1.  **Create a VM Instance:**
+
+      * In the GCP Console, go to **Compute Engine \> VM instances** and click **Create Instance**.
+      * **Machine Configuration:**
+          * Select a region with NVIDIA L4 GPUs.
+          * Add 1 x **NVIDIA L4** GPU.
+          * Choose an **N2** or **E2** series machine with at least 4 (chose 8) vCPUs and 16 GB (chose 32 GB) of RAM.
+      * **Boot Disk:**
+          * Click **Change**. Select **Ubuntu** as the OS and **Ubuntu 20.04 LTS** as the version.
+          * Increase the disk size to at least **50 GB**.
+      * **Firewall:** Check the boxes to **Allow HTTP traffic** and **Allow HTTPS traffic**.
+      * Create the instance.
+
+2.  **Install Core Dependencies:**
+
+      * Connect to your instance using the **SSH-in-browser** window from the GCP console.
+      * Update the system:
+        ```bash
+        sudo apt-get update && sudo apt-get upgrade -y
+        ```
+      * Install ROS Noetic (Desktop-Full version is recommended to get all tools):
+        ```bash
+        sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
+        sudo apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654
+        sudo apt-get update
+        sudo apt-get install -y ros-noetic-desktop-full
+        echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc
+        ```
+      * Install additional required libraries we discovered:
+        ```bash
+        sudo apt-get install -y python3-pip python3-rosdep libfmt-dev ros-noetic-joy
+        ```
+
+3.  **Set up Conda Environment:**
+
+      * Download and install Miniconda:
+        ```bash
+        wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+        bash Miniconda3-latest-Linux-x86_64.sh 
+        # (Accept all defaults, say 'yes' to running conda init)
+        ```
+      * Close and reopen your SSH-in-browser window for the changes to take effect.
+      * Clone the project repository:
+        ```bash
+        git clone https://github.com/robodhruv/visualnav-transformer.git
+        ```
+      * Create and activate the Conda environment from the project's file:
+        ```bash
+        cd visualnav-transformer
+        conda env create -f deployment/deployment_environment.yaml
+        conda activate vint_deployment
+        ```
+      * **Install all missing/conflicting Python packages with specific versions:**
+        ```bash
+        pip install pyyaml matplotlib einops vit-pytorch wandb prettytable opencv-python defusedxml "huggingface_hub==0.11.1" "empy==3.3.4"
+        ```
+
+4.  **Build the TurtleBot Workspace from Source:**
+
+      * Create a Catkin workspace:
+        ```bash
+        mkdir -p ~/turtlebot_ws/src
+        cd ~/turtlebot_ws/src
+        ```
+      * Clone all necessary source code (including dependencies for the dependencies):
+        ```bash
+        git clone https://github.com/hanruihua/Turtlebot2_on_Noetic.git
+        cd Turtlebot2_on_Noetic
+        sh turtlebot_noetic.sh
+        cd .. 
+        git clone https://github.com/strasdat/Sophus.git
+        ```
+      * Install the official `cmake` binary (the `apt` version is too old):
+        ```bash
+        cd ~
+        wget https://github.com/Kitware/CMake/releases/download/v3.29.3/cmake-3.29.3-linux-x86_64.sh
+        chmod +x cmake-3.29.3-linux-x86_64.sh
+        sudo ./cmake-3.29.3-linux-x86_64.sh --prefix=/usr/local --exclude-subdir
+        # (Accept the license when prompted)
+        ```
+      * Manually build and install the `Sophus` library:
+        ```bash
+        cd ~/turtlebot_ws/src/Sophus
+        git checkout 1.22.10 # Use a version compatible with system libraries
+        mkdir build && cd build
+        cmake ..
+        make -j$(nproc)
+        sudo make install
+        ```
+      * Build the entire ROS workspace (this will take several minutes):
+        ```bash
+        cd ~/turtlebot_ws
+        rosdep install --from-paths src --ignore-src -r -y
+        catkin_make_isolated
+        ```
+      * Add the new workspace to your environment permanently:
+        ```bash
+        echo "source ~/turtlebot_ws/devel_isolated/setup.bash" >> ~/.bashrc
+        ```
+
+5.  **Fix the Project Scripts:**
+
+      * The project scripts hardcode the wrong camera topic for Gazebo (assume USB connection to Kobuki Robot Platform). Edit the central `topic_names.py` file to fix this for all other scripts.
+        ```bash
+        cd ~/visualnav-transformer/deployment/src/
+        nano topic_names.py
+        ```
+      * Find the line `IMAGE_TOPIC = "/usb_cam/image_raw"` and change it to use (can pu told one in bash comment instead of replacing entirely):
+        `IMAGE_TOPIC = "/camera/rgb/image_raw"`
+      * Save and exit the editor.
+
+### 1.2: Remote Desktop (RDP) Setup
+
+To view the GUI, RDP seemed straightforward over `ssh -X` or `VNC` .
+
+1.  **Install Desktop & RDP Server (in SSH-in-browser):**
+    ```bash
+    sudo apt-get install -y xfce4 xfce4-goodies
+    sudo apt-get install -y xrdp
+    sudo adduser xrdp ssl-cert
+    ```
+2.  **Configure the Session:** Create a file to tell RDP to launch the XFCE desktop.
+    ```bash
+    echo xfce4-session > ~/.xsession
+    sudo systemctl restart xrdp
+    ```
+3.  **Set a Password:** RDP uses your Linux user password. You must set one.
+    ```bash
+    sudo passwd <username> 
+    # (Enter your new password when prompted)
+    ```
+4.  **GCP Firewall Rule:** In the GCP Console under **VPC Network \> Firewall**, create a new rule:
+      * **Name:** `allow-rdp`
+      * **Direction:** `Ingress`
+      * **Action:** `Allow`
+      * **Targets:** `All instances in the network`
+      * **Source IPv4 ranges:** `0.0.0.0/0`
+      * **Protocols and ports:** Check **TCP** and enter port `3389`.
+
+## Part 2: Running the Navigation Demo
+
+This is the final end-to-end workflow, performed inside the RDP session.
+
+1.  **Connect to Your Instance:** Use the "Remote Desktop Connection" app on your local Windows computer to connect to your instance's External IP. Log in with your username and the password you just set.
+
+2.  **Open Terminals:** Inside the remote desktop, open three terminal windows.
+
+3.  **The "Golden Rule":** In **all three terminals**, run this command to set up the environment (or  ` >> .bashrc` so terminal will automaticall open with this done and run `exec bash` for it to take effect):
+
+    ```bash
+    conda activate vint_deployment && source ~/turtlebot_ws/devel_isolated/setup.bash
+    ```
+
+4.  **Record a Path:**
+
+      * **Terminal 1:** Launch the simulator: `roslaunch turtlebot_gazebo turtlebot_world.launch`
+      * **Terminal 2:** Start the recorder: `rosbag record -O ~/my_demo_path.bag /camera/rgb/image_raw /odom`
+      * **Terminal 3:** Start the driver: `roslaunch turtlebot_teleop keyboard_teleop.launch`
+      * Drive the robot in Gazebo, making sure to stop far from the origin. When done, press `Ctrl+C` in Terminal 2.
+
+5.  **Create the Map:**
+
+      * In Terminal 2 (or a new one with the environment set up), run:
+        ```bash
+        cd ~/visualnav-transformer/deployment/src/
+        python create_topomap.py --dt 1 --dir my_demo_map ~/my_demo_path.bag
+        ```
+
+6.  **Run Autonomous Navigation:**
+
+      * First, count the number of images to determine your goal node:
+        ```bash
+        ls ~/visualnav-transformer/deployment/topomaps/images/my_demo_map/ | wc -l
+        ```
+      * Subtract 1 from that number to get your `<goal_node_number>`.
+      * Make sure the simulator is still running in Terminal 1 (restart it if needed to reset the robot's position).
+      * In Terminal 2, launch the AI:
+        ```bash
+        cd ~/visualnav-transformer/deployment/src/
+        ./navigate.sh "--model gnm --dir my_demo_map --goal-node <goal_node_number>"
+        ```
+      * Watch the Gazebo window to see the robot navigate autonomously.
+
+-----
+
 # General Navigation Models: GNM, ViNT and NoMaD
 
 **Contributors**: Dhruv Shah, Ajay Sridhar, Nitish Dashora, Catherine Glossop, Kyle Stachowicz, Arjun Bhorkar, Kevin Black, Noriaki Hirose, Sergey Levine
